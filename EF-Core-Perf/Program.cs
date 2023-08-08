@@ -10,6 +10,8 @@ var dbFile = Path.Combine(AppContext.BaseDirectory, "db.sqlite");
 
 using var httpClient = new HttpClient();
 
+var firstStart = !File.Exists(dbFile); 
+
 var connection = new SqliteConnection($"Data Source={dbFile}");
 connection.Open();
 
@@ -18,7 +20,7 @@ var options = new DbContextOptionsBuilder<HighwayDbContext>()
     .Options;
 
 // download data if not exists
-if (!File.Exists(dbFile))
+if (firstStart)
 {
     var client = new Api.ApiClient(httpClient);
     var highways = await client.ListAutobahnenAsync();
@@ -86,7 +88,7 @@ for (int i = 0; i < sampleSize; i++)
     efPureTimes.Add(stopwatch.ElapsedMilliseconds);
 }
 
-Console.WriteLine($"{efPureTimes.Min()}ms {efPureTimes.Max()}ms {efPureTimes.Average()}ms");
+Console.WriteLine($"{efPureTimes.Min()}ms {efPureTimes.Max()}ms {efPureTimes.Average()}ms (default)");
 
 
 var efNoTrackingTimes = new List<double>(sampleSize);
@@ -105,7 +107,7 @@ for (int i = 0; i < sampleSize; i++)
     efNoTrackingTimes.Add(stopwatch.ElapsedMilliseconds);
 }
 
-Console.WriteLine($"{efNoTrackingTimes.Min()}ms {efNoTrackingTimes.Max()}ms {efNoTrackingTimes.Average()}ms");
+Console.WriteLine($"{efNoTrackingTimes.Min()}ms {efNoTrackingTimes.Max()}ms {efNoTrackingTimes.Average()}ms (AsNoTracking)");
 
 var efNoTrackingSplit = new List<double>(sampleSize);
 for (int i = 0; i < sampleSize; i++)
@@ -124,7 +126,25 @@ for (int i = 0; i < sampleSize; i++)
     efNoTrackingSplit.Add(stopwatch.ElapsedMilliseconds);
 }
 
-Console.WriteLine($"{efNoTrackingSplit.Min()}ms {efNoTrackingSplit.Max()}ms {efNoTrackingSplit.Average()}ms");
+Console.WriteLine($"{efNoTrackingSplit.Min()}ms {efNoTrackingSplit.Max()}ms {efNoTrackingSplit.Average()}ms (AsNoTracking+AsSplitQuery)");
+
+var efOnlySplit = new List<double>(sampleSize);
+for (int i = 0; i < sampleSize; i++)
+{
+    var stopwatch = new Stopwatch();
+    stopwatch.Start();
+    using var dbContext = new HighwayDbContext(options);
+    var result = dbContext
+        .Roads
+        .Include(x => x.RestingAreas)
+            .ThenInclude(x => x.Features)
+        .AsSplitQuery()
+        .ToList();
+    stopwatch.Stop();
+    efOnlySplit.Add(stopwatch.ElapsedMilliseconds);
+}
+
+Console.WriteLine($"{efOnlySplit.Min()}ms {efOnlySplit.Max()}ms {efOnlySplit.Average()}ms (AsSplitQuery)");
 
 var efNoTrackingSplitProjection = new List<double>(sampleSize);
 for (int i = 0; i < sampleSize; i++)
@@ -149,8 +169,7 @@ for (int i = 0; i < sampleSize; i++)
     efNoTrackingSplitProjection.Add(stopwatch.ElapsedMilliseconds);
 }
 
-Console.WriteLine($"{efNoTrackingSplitProjection.Min()}ms {efNoTrackingSplitProjection.Max()}ms {efNoTrackingSplitProjection.Average()}ms");
-
+Console.WriteLine($"{efNoTrackingSplitProjection.Min()}ms {efNoTrackingSplitProjection.Max()}ms {efNoTrackingSplitProjection.Average()}ms (NoTracking+Split+Projection)");
 
 var sqlProjection = new List<double>(sampleSize);
 for (int i = 0; i < sampleSize; i++)
@@ -166,4 +185,4 @@ for (int i = 0; i < sampleSize; i++)
     sqlProjection.Add(stopwatch.ElapsedMilliseconds);
 }
 
-Console.WriteLine($"{sqlProjection.Min()}ms {sqlProjection.Max()}ms {sqlProjection.Average()}ms");
+Console.WriteLine($"{sqlProjection.Min()}ms {sqlProjection.Max()}ms {sqlProjection.Average()}ms (raw sql)");
